@@ -24,13 +24,12 @@ pub struct Ports {
 pub fn configure(p: Peripherals) -> (crate::board::Usb, Ports, Option<Swd>) {
     let usb = crate::board::usb(p.USB_OTG_HS, p.PA12, p.PA11);
 
-    // TODO 1: SWCLK = PE14 (P16-13), SWDIO = PE15 (P16-18)
+    // 标准 P16 接口：SWCLK = PE14, SWDIO = PE15
     let swclk = Output::new(p.PE14, Level::Low, Speed::VeryHigh);
     let swdio = Flex::new(p.PE15);
     let swd = Some(Swd::new(swclk, swdio));
 
-    // TODO 2: UART8 115200 8N1
-    // RX = PE0 (P16-11), TX = PE1 (P16-12)
+    // 标准 P16 接口：UART8 RX = PE0, TX = PE1
     let mut uart_config = UartConfig::default();
     uart_config.baudrate = 115_200;
     
