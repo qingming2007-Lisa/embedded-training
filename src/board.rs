@@ -4,7 +4,7 @@ use embassy_stm32::{
     Config, Peri, Peripherals, bind_interrupts,
     can::{
         Can, CanConfigurator, IT0InterruptHandler, IT1InterruptHandler,
-        config::{FrameTransmissionConfig, NominalBitTiming},
+        config::{FrameTransmissionConfig, NominalBitTiming, DataBitTiming},
     },
     peripherals,
     rcc::{
@@ -61,24 +61,37 @@ pub fn usb(
     Driver::new_fs(otg, UsbIrqs, dp, dm, OUT.init([0; 512]), config)
 }
 
-/// Provided CAN1 setup for the onboard transceiver and 80 MHz FDCAN clock.
+/// 扩展任务：5 Mbit/s CAN FD 与 TDC
 pub fn can1(
     fdcan: Peri<'static, peripherals::FDCAN1>,
     rx: Peri<'static, peripherals::PD0>,
     tx: Peri<'static, peripherals::PD1>,
 ) -> Can<'static> {
     let mut can = CanConfigurator::new(fdcan, rx, tx, CanIrqs);
-    // 1 Mbit/s, 75% sample point. Segment lengths are in time quanta.
-    let timing = NominalBitTiming {
+    
+    // 仲裁段 (Nominal): 1 Mbit/s, 75% 采样点
+    let nominal = NominalBitTiming {
         prescaler: NonZeroU16::new(1).unwrap(),
         seg1: NonZeroU8::new(59).unwrap(),
         seg2: NonZeroU8::new(20).unwrap(),
         sync_jump_width: NonZeroU8::new(20).unwrap(),
     };
+
+    // 数据段 (Data): 5 Mbit/s, 87.5% 采样点，并启用 TDC
+    let data = DataBitTiming {
+        prescaler: NonZeroU16::new(1).unwrap(),
+        seg1: NonZeroU8::new(13).unwrap(),
+        seg2: NonZeroU8::new(2).unwrap(),
+        sync_jump_width: NonZeroU8::new(2).unwrap(),
+        transceiver_delay_compensation: true, // 启用 TDC
+    };
+
     let config = can
         .config()
-        .set_nominal_bit_timing(timing)
-        .set_frame_transmit(FrameTransmissionConfig::ClassicCanOnly);
+        .set_nominal_bit_timing(nominal)
+        .set_data_bit_timing(data)
+        .set_frame_transmit(FrameTransmissionConfig::AllowFdCanAndBRS); // 允许 CAN FD + BRS
+
     can.set_config(config);
     can.into_normal_mode()
 }
