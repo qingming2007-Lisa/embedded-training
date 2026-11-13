@@ -3,28 +3,51 @@
 use embassy_stm32::{
     Peripherals,
     can::Can,
-    gpio::{Output, Flex, Level, Speed}
+    gpio::{Output, Flex, Level, Speed},
+    usart::{BufferedUart, Config as UartConfig, BufferedInterruptHandler},
+    bind_interrupts,
+    peripherals::UART7
 };
+use static_cell::StaticCell;
 
 use crate::swd::Swd;
 
+bind_interrupts!(struct Irqs {
+    UART7 => BufferedInterruptHandler<UART7>;
+});
+
 pub struct Ports {
     pub can: Can<'static>,
-    pub uart: Option<embassy_stm32::usart::BufferedUart<'static>>,
+    pub uart: Option<BufferedUart<'static>>,
 }
 
 pub fn configure(p: Peripherals) -> (crate::board::Usb, Ports, Option<Swd>) {
     let usb = crate::board::usb(p.USB_OTG_HS, p.PA12, p.PA11);
 
-    // 使用 P11 接口上的引脚
-    // SWCLK = PE13, SWDIO = PE9 (图中的 PE09)
+    // SWD: 使用 P11 的 PE13 和 PE9
     let swclk = Output::new(p.PE13, Level::Low, Speed::VeryHigh);
     let swdio = Flex::new(p.PE9);
     let swd = Some(Swd::new(swclk, swdio));
 
-    // 为了不冲突，暂时关闭 UART 自测
-    let uart = None;
+    // UART7: 使用图中的 PE7(RX) 和 PE8(TX)
+    let mut uart_config = UartConfig::default();
+    uart_config.baudrate = 115_200;
+    
+    static TX_BUF: StaticCell<[u8; 1024]> = StaticCell::new();
+    static RX_BUF: StaticCell<[u8; 1024]> = StaticCell::new();
+    let tx_buf = TX_BUF.init([0; 1024]);
+    let rx_buf = RX_BUF.init([0; 1024]);
+
+    let uart = BufferedUart::new(
+        p.UART7,
+        p.PE7, // RX
+        p.PE8, // TX
+        rx_buf,
+        tx_buf,
+        Irqs,
+        uart_config,
+    ).unwrap();
 
     let can = crate::board::can1(p.FDCAN1, p.PD0, p.PD1);
-    (usb, Ports { can, uart }, swd)
-} 
+    (usb, Ports { can, uart: Some(uart) }, swd)
+}
